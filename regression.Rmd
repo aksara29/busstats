@@ -1,0 +1,179 @@
+---
+title: 'Business Statistics Assessment IB94X0 2020-2021 #1'
+author: "2083046"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+---
+
+```{r setup, message = FALSE, results = 'hide', warning = FALSE}
+library(knitr)
+library(tidyverse)
+library(gridExtra)
+library(grid)
+library(ggplot2)
+library(emmeans)
+library(Hmisc)
+install.packages("ggcorrplot", repos = "https://cran.rstudio.com")  #for plotting correlation matrix
+install.packages("sjPlot", repos = "https://cran.rstudio.com")
+install.packages("sjmisc", repos = "https://cran.rstudio.com")
+install.packages("sjlabelled", repos = "https://cran.rstudio.com")
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+
+options(width=100)
+```
+
+---
+
+# Question 1 Section 1
+
+Data Dictionary
+
+Variable            | Description
+------------------- | -----------------------------------------------------------------------------------------
+`Outlet_ID`         | Outlet ID 
+`outlettype`        | Store types: community, city centre, and superstore
+`sales_1`           | Sales prior to trial
+`sales_2`           | Sales after trial
+`staff_turnover`    | Proportion of staff left the outlet during the period the data covers.   
+`sales_gain_count`  | Change in actual sales (GBP): sales_2 - sales_1
+`sales_gain_perc`   | Sales growth rate (%): (sales_2 - sales_1)/sales_1 
+`trial`             | Trial status: Trial (selected store with layout change), Non Trial (not selected store)
+
+Change in layout and signage positively affects sales gain i.e. sales improvement, both in terms of actual numbers and growth rate (%). 
+
+For actual numbers, stores with layout change are predicted to gain higher sales than those without the change by 439,508 GBP in average with 95% CI [293,926 - 585,090], t(494) = 5.93, p < 0.0001, which is demonstrated in figure 1.
+
+![Figure 1: Actual Sales Gain Prediction from Regression](Figure_1.png){width=50%} 
+
+This is because the average of sales improvement for the stores with the change (trial) is 430,529 GBP, 95% CI [329,260 - 531,797] while the average of sales gain for those without the change (non-trial) is -8,979 GBP, 95% CI [-113,568 - 95,610]. The summary of estimated actual sales is depicted in figure 2.
+
+![](Figure_2.png)
+
+Moreover, figure 3 shows that average sales growth rate of stores as trial group is estimated to be higher than the outlets without the change (non-trial group) by 1.42% with 95% CI[0.60 - 2.25], t(494) = 3.39, p < 0.001. The estimated mean of the growth rate of trial group is 1.43%, 95% CI [0.86, 2.00] whereas for the non-trial group, the predicted mean of the growth rate is 0.005%, 95% CI [-0.59 - 0.60].
+
+![Figure 3: Sales Growth Rate Prediction from Regression](Figure_3.png){width=50%}
+
+Nevertheless, actual sales prediction is relatively preferred more than sales growth rate since the R-squared is higher, 0.07 vs. 0.02 respectively. This indicates that trial status is able to explain more on the prediction compared with sales growth rate estimation. Note that the R-squared values from both predictions are low signifying that there should be more predictors to help describe the sales.
+
+---
+
+# Question 2 Section 1
+
+Adding staff turnover is not useful for sales gain prediction, where F(1,489) = 1.25, p = 0.26 from variance analysis. Besides, the correlation between staff turnover and actual sales gain is completely low, at -0.09 as illustrated in figure 4, signifying that there is no relationship between staff turnover proportion and sales gain.
+
+![Figure 4: Correlation](Figure_4.png)
+
+As a result, using trial and outlet types as predictors is more appropriate. From figure 5, the effect of trial status significantly varies across outlet types, F(2, 490) = 34.62, p < 0.0001. This is applicable only for superstore and community store types. For example, the average sales gain for trial group is the highest at 1,355,741 GBP in superstores with 95% CI [1,158,831 - 1,552,651] while there is no effect of trial on city centre stores.
+
+![](Figure_5.png)
+
+---
+
+# Question 1 Section 2
+
+```{r}
+# Loading data
+data = readr::read_csv("sales_data.csv")
+View(data)
+summary(data)
+
+# Identifying outliers using IQR
+ggplot(data, aes(x=staff_turnover)) + geom_histogram()
+outliers1 <- boxplot(data$staff_turnover, ylab = "Staff Turnover")$out
+
+# Drop the rows containing outliers
+data <- data[-c(which(data$staff_turnover %in% outliers1)),]
+
+# Boxplot without outliers
+boxplot(data$staff_turnover, ylab = "Staff Turnover")
+
+# Data manipulation
+data$outlettype = as.factor(data$outlettype)
+data = data %>% mutate(sales_gain_count = sales_2 - sales_1, sales_gain_perc = (100 * (sales_2 - sales_1)) / sales_1, trial = ifelse(data$intrial == 'TRUE', 1, 0))
+data$trial = factor(data$trial, labels = c("Non Trial", "Trial"))
+data$outlettype = recode(data$outlettype, community_convenience = "community", city_centre_convenience = "city centre")
+
+# Explore data by plotting
+data.by.sector <- data %>% group_by(trial) %>% summarise(mean=mean(sales_gain_count), n=n())
+
+ggplot(data) + geom_histogram(aes(x=sales_gain_count)) + facet_grid(trial~.) + labs(x="Sales Gain (GBP)", y="Frequency", subtitle="Distribution of Sales Gain by Trail Group") + geom_vline(data=data.by.sector, mapping=aes(xintercept=mean), col="red")
+
+# Modelling
+set.seed(2)
+m.sales_diff1 = lm(sales_gain_count ~ trial, data = data)
+m.sales_diff2 = lm(sales_gain_perc ~ trial, data = data)
+
+# Result
+summary(m.sales_diff1)
+summary(m.sales_diff2)
+tab_model(m.sales_diff1)
+tab_model(m.sales_diff2)
+
+# To test if trial affects sales gain
+anova(m.sales_diff1)
+anova(m.sales_diff2)
+
+# Predicted means with estimation approach 
+cbind(coefficient=coef(m.sales_diff1), confint(m.sales_diff1))
+cbind(coefficient=coef(m.sales_diff2), confint(m.sales_diff2))
+
+# Predicted means with estimation approach - alternative way
+(  m.sales_diff1_means <- emmeans(m.sales_diff1, ~trial)  )
+(  m.sales_diff2_means <- emmeans(m.sales_diff2, ~trial)  )
+
+# Contrast to see mean difference 
+contrast.trial <- data.frame(Trial_vs_NonTrial = c(-1,1))
+contrast(m.sales_diff1_means, contrast.trial)
+( contrast.CI = confint(contrast(m.sales_diff1_means, contrast.trial)) )
+
+# Plot the result
+options(scipen=10000)
+
+p.gain <- ggplot(summary(m.sales_diff1_means), aes(x=trial, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point() + geom_linerange() + geom_hline(yintercept=0, lty=2) + labs(x="Trial Group", y="Sales Gain (GBP)", subtitle="Estimated Sales Gain \nby Trial Group") + ylim(-600000,600000) + theme(plot.subtitle=element_text(size=10))
+
+p.contrasts <- ggplot(contrast.CI, aes(x=contrast, y=estimate, ymin=lower.CL, ymax=upper.CL)) + geom_point() + geom_linerange() + geom_hline(yintercept=0, lty=2) + labs(x="Trial Group", y="Difference in Sales Gain (GBP)", subtitle="Estimated Difference in Sales Gain \nby Trial Group") + ylim(-600000,600000) + theme(plot.subtitle=element_text(size=10))
+
+grid.arrange(p.gain, p.contrasts, ncol=2, bottom = textGrob("Figure 2: Estimated Sales Gain and The Difference by Trial Group", gp=gpar(fontsize=10, font=1)))
+```
+
+---
+
+# Question 2 Section 2
+
+```{r}
+# Explore the relationship between staff turnover and sales gain
+data %>% ggplot(aes(x=staff_turnover, y=sales_gain_count, color = trial)) + geom_jitter() + geom_smooth(method = "lm") + xlab("Staff Turnover")
+
+# Correlation
+corr = rcorr(as.matrix(select(data, sales_gain_count, sales_gain_perc, staff_turnover)))
+ggcorrplot::ggcorrplot(corr$r, outline.col = "white", lab = T, tl.cex = 10)
+
+# Validate if "staff_turnover" affects sales gain 
+m.sales_diff3 = lm(sales_gain_count ~ outlettype*trial + staff_turnover, data = data)
+anova(m.sales_diff3)
+
+# Explore sales gain by outlet type
+ggplot(data, aes(x=outlettype, y=sales_gain_count, color = trial)) + geom_jitter(alpha = 0.2) + geom_hline(yintercept=0, lty=2) + labs(x = "Outlet Type", y = "Sales Gain (GBP)", subtitle = "Sales Gain by Outlet Type")
+
+# Generate a model to predict average sales gain
+m.sales_diff4 = lm(sales_gain_count ~ outlettype*trial, data = data)
+anova(m.sales_diff4)
+
+# Generate the result table
+tab_model(m.sales_diff4)
+
+# Estimated sales gain and diff in sales gain
+(  m.sales_diff4.emm <- emmeans(m.sales_diff4, ~trial+outlettype)  )
+
+# Plot estimated sales
+ggplot(summary(m.sales_diff4.emm), aes(x=outlettype, y=emmean, ymin=lower.CL, ymax=upper.CL, col=trial)) + geom_point() + geom_linerange(alpha=0.5) + labs(x="Outlet Type", y="Sales Gain (GBP)", col="Trial Group", subtitle="Estimated Sales Gain by Outlet Type", caption = "Figure 5: Estimated Sales Gain by Outlet Type")
+```
+
