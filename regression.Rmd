@@ -1,5 +1,5 @@
 ---
-title: 'Business Statistics 2020-2021'
+title: 'Personal Project for Statistics'
 author: "Aksara Iam"
 output:
   html_document:
